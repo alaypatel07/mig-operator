@@ -544,6 +544,30 @@ spec:
           - patch
           - delete
         - apiGroups:
+            - projects.openshift.io
+          resources:
+            - '*'
+          verbs:
+            - get
+            - list
+            - watch
+            - create
+            - update
+            - patch
+            - delete
+        - apiGroups:
+            - migration.openshift.io
+          resources:
+            - 'MigrationController'
+          verbs:
+            - get
+            - list
+            - watch
+            - create
+            - update
+            - patch
+            - delete
+        - apiGroups:
           - admissionregistration.k8s.io
           resources:
           - mutatingwebhookconfigurations
