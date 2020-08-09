@@ -31,7 +31,8 @@ metadata:
               "restic_timeout": "1h",
               "mig_pv_limit": "100",
               "mig_pod_limit": "100",
-              "mig_namespace_limit": "10"
+              "mig_namespace_limit": "10",
+              "mig_failure_rollback": false
             }
         },
         {
@@ -175,6 +176,12 @@ metadata:
     operatorframework.io/cluster-monitoring: "true"
     operatorframework.io/suggested-namespace: openshift-migration
 spec:
+  skips:
+  - konveyor-operator.v1.2.4
+  - konveyor-operator.v1.2.3
+  - konveyor-operator.v1.2.2
+  - konveyor-operator.v1.2.1
+  - konveyor-operator.v1.2.0
   relatedImages:
   - name: controller
     image: quay.io/konveyor/mig-controller:latest
@@ -198,13 +205,11 @@ spec:
     image: quay.io/konveyor/hook-runner:latest
   displayName: Konveyor Operator
   description: |
-    The Konveyor Operator for OpenShift enables installation of the OpenShift application migration tool.
+    The Konveyor Operator enables installation of the application migration tool.
 
-    Prior to installing create the openshift-migration namespace (oc create namespace openshift-migration) and install the operator within this namespace.
-
-    After installation you can install components by creating a MigrationController CR. Generally the defaults provided are acceptable for an OpenShift 4 destination cluster.
+    After installation you can install components by creating a MigrationController CR. Generally the defaults provided are acceptable for a target cluster.
     The components include
-    * velero and restic which is required on all source and destination cluster
+    * velero and restic which is required on all source and target cluster
     * mig-controller to coordinate backups and restores between cluster
     * mig-ui which provides a user friendly interface for creating migration plans.
 
@@ -695,6 +700,10 @@ spec:
                   value: quay.io
                 - name: PROJECT
                   value: konveyor
+                - name: HOOK_RUNNER_REPO
+                  value: hook-runner
+                - name: HOOK_RUNNER_TAG
+                  value: latest
                 - name: MIG_CONTROLLER_REPO
                   value: mig-controller
                 - name: MIG_CONTROLLER_TAG

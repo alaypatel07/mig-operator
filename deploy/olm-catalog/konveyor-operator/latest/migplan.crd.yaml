@@ -69,6 +69,8 @@ spec:
                         items:
                           type: string
                         type: array
+                      hasReference:
+                        type: boolean
                       name:
                         type: string
                       namespace:
@@ -113,6 +115,10 @@ spec:
           type: object
         status:
           properties:
+            excludedResources:
+              items:
+                type: string
+              type: array
             incompatibleNamespaces:
               items:
                 properties:

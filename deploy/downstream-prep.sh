@@ -5,12 +5,15 @@ if grep -q latest deploy/olm-catalog/konveyor-operator/konveyor-operator.package
   sed -i 3,4d deploy/olm-catalog/konveyor-operator/konveyor-operator.package.yaml
 fi
 sed -i s,konveyor-operator,cam-operator,g deploy/olm-catalog/konveyor-operator/konveyor-operator.package.yaml
-rm -rf deploy/olm-catalogstable deploy/olm-catalog/konveyor-operator/latest
+rm -rf deploy/non-olm/latest/ deploy/olm-catalog/konveyor-operator/latest
 
 #deal with k8s_status change upstream/downstream
 sed -i 's/operator_sdk\.util\.//g' roles/migrationcontroller/tasks/main.yml
 
-if [ -d deploy/olm-catalog/konveyor-operator/v1.2.0 ]; then
+#adjust downstream entrypoint command
+sed -i 's/exec-entrypoint/run/g' build/entrypoint
+
+if [ -d deploy/olm-catalog/konveyor-operator/v1.2.4 ]; then
   #Declare v1.2 image information
   V1_2_IMAGES=(
     "controller"
@@ -43,17 +46,38 @@ if [ -d deploy/olm-catalog/konveyor-operator/v1.2.0 ]; then
 
   #Get latest 1.2 images
   for i in ${V1_2_IMAGES[@]}; do
-    docker pull registry-proxy.engineering.redhat.com/rh-osbs/rhcam-${V1_2_IMG_MAP[${i}_repo]}:v1.2 > /dev/null
+    docker pull registry-proxy.engineering.redhat.com/rh-osbs/rhcam-${V1_2_IMG_MAP[${i}_repo]}:v1.2 >/dev/null 2>&1
+    DOCKER_STAT=$?
+    RETRIES=10
+    while [ "$DOCKER_STAT" -ne 0 ] && [ $RETRIES -gt 0 ]; do
+      docker pull registry-proxy.engineering.redhat.com/rh-osbs/rhcam-${V1_2_IMG_MAP[${i}_repo]}:v1.2 >/dev/null 2>&1
+      DOCKER_STAT=$?
+      let RETRIES=RETRIES-1
+    done
+
+    if [ $RETRIES -le 0 ]; then
+      echo "Failed to pull new images"
+      exit 1
+    fi
   done
 
   #oc mirror 1.2 images to get correct shas
   for i in ${V1_2_IMAGES[@]}; do
-    V1_2_IMG_MAP[${i}_sha]=$(oc image mirror --dry-run=true registry-proxy.engineering.redhat.com/rh-osbs/rhcam-${V1_2_IMG_MAP[${i}_repo]}:v1.2=quay.io/ocpmigrate/rhcam-${V1_2_IMG_MAP[${i}_repo]}:v1.2 2>&1 | grep -A1 manifests | grep sha256 | awk -F'[: ]' '{ print $8 }')
+    RETRIES=10
+    while [ -z "${V1_2_IMG_MAP[${i}_sha]}" ] && [ $RETRIES -gt 0 ]; do
+      V1_2_IMG_MAP[${i}_sha]=$(oc image mirror --dry-run=true registry-proxy.engineering.redhat.com/rh-osbs/rhcam-${V1_2_IMG_MAP[${i}_repo]}:v1.2=quay.io/ocpmigrate/rhcam-${V1_2_IMG_MAP[${i}_repo]}:v1.2 2>&1 | grep -A1 manifests | grep sha256 | awk -F'[: ]' '{ print $8 }')
+      let RETRIES=RETRIES-1
+    done
+
+    if [ $RETRIES -le 0 ]; then
+      echo "Failed to mirror images to obtain SHAs"
+      exit 1
+    fi
   done
 
-  # Make 1.2.0 Downstream CSV Changes
-  for f in deploy/olm-catalog/konveyor-operator/v1.2.0/konveyor-operator.v1.2.0.clusterserviceversion.yaml \
-           deploy/non-olm/v1.2.0/operator.yml
+  # Make 1.2 Downstream CSV Changes
+  for f in deploy/olm-catalog/konveyor-operator/v1.2.4/konveyor-operator.v1.2.4.clusterserviceversion.yaml \
+           deploy/non-olm/v1.2.4/operator.yml
     do
     if [[ "$f" =~ .*clusterserviceversion.* ]]; then
       sed -i "s,mig-operator-container:.*,openshift-migration-rhel7-operator@sha256:${V1_2_IMG_MAP[operator_sha]},g"                                        ${f}
@@ -84,6 +108,7 @@ if [ -d deploy/olm-catalog/konveyor-operator/v1.2.0 ]; then
     sed -i "s,gcp-rhel8@sha256:.*,gcp-rhel8@sha256:${V1_2_IMG_MAP[gcpplugin_sha]},g"                                                                        ${f}
     sed -i "s,registry-rhel8@sha256:.*,registry-rhel8@sha256:${V1_2_IMG_MAP[registry_sha]},g"                                                               ${f}
     sed -i "s,hook-runner-rhel7@sha256:.*,hook-runner-rhel7@sha256:${V1_2_IMG_MAP[hookrunner_sha]},g"                                                       ${f}
+    sed -i 's,value: hook-runner,value: openshift-migration-hook-runner-rhel7@sha256,g'                                                                     ${f}
     sed -i 's,value: mig-controller,value: openshift-migration-controller-rhel8@sha256,g'                                                                   ${f}
     sed -i 's,value: mig-ui,value: openshift-migration-ui-rhel8@sha256,g'                                                                                   ${f}
     sed -i 's,value: velero-restic-restore-helper,value: openshift-migration-velero-restic-restore-helper-rhel8@sha256,g'                                   ${f}
@@ -106,6 +131,7 @@ if [ -d deploy/olm-catalog/konveyor-operator/v1.2.0 ]; then
     sed -i "/VELERO_AWS_PLUGIN_TAG/,/^ *[^:]*:/s/value: .*/value: ${V1_2_IMG_MAP[awsplugin_sha]}/"                                                          ${f}
     sed -i "/VELERO_AZURE_PLUGIN_TAG/,/^ *[^:]*:/s/value: .*/value: ${V1_2_IMG_MAP[azureplugin_sha]}/"                                                      ${f}
     sed -i "/MIGRATION_REGISTRY_TAG/,/^ *[^:]*:/s/value: .*/value: ${V1_2_IMG_MAP[registry_sha]}/"                                                          ${f}
+    sed -i "/HOOK_RUNNER_TAG/,/^ *[^:]*:/s/value: .*/value: ${V1_2_IMG_MAP[hookrunner_sha]}/"                                                               ${f}
   done
 fi
 
@@ -138,12 +164,31 @@ if [ -d deploy/olm-catalog/konveyor-operator/v1.1.2 ]; then
 
   #Get latest 1.1 images
   for i in ${V1_1_IMAGES[@]}; do
-    docker pull registry-proxy.engineering.redhat.com/rh-osbs/rhcam-${V1_1_IMG_MAP[${i}_repo]}:v1.1 > /dev/null
+    docker pull registry-proxy.engineering.redhat.com/rh-osbs/rhcam-${V1_1_IMG_MAP[${i}_repo]}:v1.1 >/dev/null 2>&1
+    while [ "$DOCKER_STAT" -ne 0 ] && [ $RETRIES -gt 0 ]; do
+      docker pull registry-proxy.engineering.redhat.com/rh-osbs/rhcam-${V1_1_IMG_MAP[${i}_repo]}:v1.1 >/dev/null 2>&1
+      DOCKER_STAT=$?
+      let RETRIES=RETRIES-1
+    done
+
+    if [ $RETRIES -le 0 ]; then
+      echo "Failed to pull new images"
+      exit 1
+    fi
   done
 
   #oc mirror 1.1 images to get correct shas
   for i in ${V1_1_IMAGES[@]}; do
-    V1_1_IMG_MAP[${i}_sha]=$(oc image mirror --dry-run=true registry-proxy.engineering.redhat.com/rh-osbs/rhcam-${V1_1_IMG_MAP[${i}_repo]}:v1.1=quay.io/ocpmigrate/rhcam-${V1_1_IMG_MAP[${i}_repo]}:v1.1 2>&1 | grep -A1 manifests | grep sha256 | awk -F'[: ]' '{ print $8 }')
+    RETRIES=10
+    while [ -z "${V1_1_IMG_MAP[${i}_sha]}" ] && [ $RETRIES -gt 0 ]; do
+      V1_1_IMG_MAP[${i}_sha]=$(oc image mirror --dry-run=true registry-proxy.engineering.redhat.com/rh-osbs/rhcam-${V1_1_IMG_MAP[${i}_repo]}:v1.1=quay.io/ocpmigrate/rhcam-${V1_1_IMG_MAP[${i}_repo]}:v1.1 2>&1 | grep -A1 manifests | grep sha256 | awk -F'[: ]' '{ print $8 }')
+      let RETRIES=RETRIES-1
+    done
+
+    if [ $RETRIES -le 0 ]; then
+      echo "Failed to mirror images to obtain SHAs"
+      exit 1
+    fi
   done
 
   # Make 1.1 Downstream CSV Changes

@@ -4,11 +4,28 @@ configmap_secret: ""
 controller_state: absent
 deprecated_cors_configuration: false
 cors_origins: []
+disable_image_migration: false
+disable_pv_migration: false
+excluded_resources:
+  - imagetags
+  - templateinstances
+  - clusterserviceversions
+  - packagemanifests
+  - subscriptions
+  - servicebrokers
+  - servicebindings
+  - serviceclasses
+  - serviceinstances
+  - serviceplans
 proxy_secret_name: "migration-proxy"
 http_proxy: "{{ lookup( 'env', 'HTTP_PROXY') }}"
 https_proxy: "{{ lookup( 'env', 'HTTPS_PROXY') }}"
 no_proxy: "{{ lookup( 'env', 'NO_PROXY') }}"
 image_pull_policy: Always
+hook_runner_image: "{{ registry }}/{{ project }}/{{ hook_runner_repo }}"
+hook_runner_repo: "{{ lookup( 'env', 'HOOK_RUNNER_REPO') }}"
+hook_runner_version: "{{ snapshot_tag | default(lookup( 'env', 'HOOK_RUNNER_TAG')) }}"
+hook_runner_image_fqin: "{{ hook_runner_image }}:{{ hook_runner_version }}"
 mig_controller_image: "{{ registry }}/{{ project }}/{{ mig_controller_repo }}"
 mig_controller_limits_cpu: "100m"
 mig_controller_limits_memory: "800Mi"
@@ -21,6 +38,7 @@ discovery_volume_path: "/var/cache/discovery"
 mig_pv_limit: "100"
 mig_pod_limit: "100"
 mig_namespace_limit: "10"
+mig_failure_rollback: false
 mig_namespace: "{{ lookup( 'env', 'WATCH_NAMESPACE') | default('openshift-migration') }}"
 mig_ui_cluster_api_endpoint: ""
 mig_ui_configmap_data: ""
@@ -82,3 +100,6 @@ noobaa_system_core_cpu: 0.5
 noobaa_system_core_mem: 500Mi
 noobaa_system_db_cpu: 0.5
 noobaa_system_db_mem: 1Gi
+noobaa_system_endpoints_cpu: 1
+noobaa_system_endpoints_mem: 500Mi
+noobaa_system_endpoints_pod_count: 2
